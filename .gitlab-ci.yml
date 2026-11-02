@@ -3,6 +3,7 @@ stages:
 - secret_scanning
 - sca
 - sast
+- dynamic_scanning
 - defectdojo
 prepare:
   image: node:20
@@ -132,3 +133,34 @@ upload-defectdojo:
   - if: $DEFECTDOJO_URL == null
     when: never
   - when: always
+
+zap-baseline:
+  image: zaproxy/zap-stable
+  stage: dynamic_scanning
+  needs: []
+  dependencies: []
+  services:
+    - name: bkimminich/juice-shop:latest
+      alias: juice-shop
+  variables:
+    FF_NETWORK_PER_BUILD: "true"
+    TARGET: "http://juice-shop:3000"
+  before_script:
+    - mkdir -p /zap/wrk
+    - cp zap/rules.conf /zap/wrk/
+    - for i in $(seq 1 30); do curl -sf -o /dev/null "$TARGET" && break; sleep 2; done
+    - curl -f -I "$TARGET"
+  script:
+    - zap-baseline.py -t "$TARGET" -c rules.conf -r zap-report.html -J zap-report.json -x zap-report.xml -s
+  after_script:
+    - cp /zap/wrk/zap-report.* "$CI_PROJECT_DIR/" || true
+  artifacts:
+    when: always
+    paths:
+      - zap-report.html
+      - zap-report.json
+      - zap-report.xml
+    expire_in: 1 week
+  allow_failure: true
+  rules:
+    - when: always
